@@ -1,0 +1,10 @@
+# 대시보드 실행에 필요한 패키지
+streamlit>=1.30
+openpyxl>=3.1
+python-pptx>=0.6.23
+pandas>=2.0
+Pillow>=10.0
+
+# 2단계: Google Sheets 연동 시 추가
+gspread>=6.0
+google-auth>=2.30
