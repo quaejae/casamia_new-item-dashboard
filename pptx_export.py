@@ -490,7 +490,8 @@ def _add_summary_slide(prs, S, important=None):
 
     table_top = margin + Mm(10)
     bottom_line_y = prs.slide_height - Mm(config.FOOTER_LINE_MARGIN_MM)
-    avail = int(bottom_line_y - table_top - Mm(config.PAGE_GAP_MM))
+    note_h = Mm(4)   # 표 아래 축약 규칙 안내문 공간
+    avail = int(bottom_line_y - table_top - Mm(config.PAGE_GAP_MM) - note_h)
 
     # 행별 최대 줄 수 → 폰트(총량 기준) → 행높이
     def _celllines(entries):
@@ -572,6 +573,12 @@ def _add_summary_slide(prs, S, important=None):
     for r_ in range(NR):
         for c_ in range(NC):
             _set_cell_border(tbl.cell(r_, c_))
+    # 표 아래 축약 규칙 안내문
+    nb = slide.shapes.add_textbox(margin, table_top + avail, usable_w, note_h)
+    np = nb.text_frame.paragraphs[0]; np.alignment = PP_ALIGN.LEFT
+    nr = np.add_run(); nr.text = "※ " + config.SUMMARY_ABBR_NOTE
+    nr.font.size = Pt(7); nr.font.name = config.FONT_NAME
+    nr.font.color.rgb = _hex("444444")
     _add_footer(slide, margin, usable_w, prs.slide_height)
 
 

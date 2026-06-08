@@ -283,5 +283,8 @@ def build_summary_html(S: dict, important=None) -> str:
     for si, (slbl, _st, sp) in enumerate(seasons):
         h.append(f'<td colspan="{sp}" class="tot">{_esc(slbl)} {_esc(S["grand_season"][si])}</td>')
     h.append('</tr>')
-    h.append('</table></div>')
+    h.append('</table>')
+    h.append(f'<div style="font-size:12px;color:#444;margin-top:6px;">'
+             f'※ {_esc(config.SUMMARY_ABBR_NOTE)}</div>')
+    h.append('</div>')
     return css + "".join(h)

@@ -113,6 +113,9 @@ SUMMARY_SEASONS = [("26'SS", 0, 6), ("26'FW", 6, 5), ("27'SS", 11, 1)]
 SUMMARY_FONT_MAX = 7
 SUMMARY_FONT_MIN = 4
 
+# 표 아래 축약 규칙 안내문
+SUMMARY_ABBR_NOTE = "‘프로젝트 혹은 시리즈 명의 첫 단어만 취한다’"
+
 # 요약표 프로젝트명 색: 기본 네이비, 클릭(중요표시) 시 빨강. 매출/SKU는 흑색.
 SUMMARY_NAME_COLOR = "1F3864"        # 네이비
 SUMMARY_NAME_IMPORTANT = "FF0000"    # 빨강(중요)
