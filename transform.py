@@ -377,7 +377,7 @@ def build_summary(data) -> dict:
     """모든 프로젝트를 브랜드×카테고리×월 매트릭스로 요약."""
     allp = _all_products(data)
     nmon = len(config.SUMMARY_MONTHS)
-    brands = _ordered_unique((p.brand for p in allp), config.BRAND_ORDER)
+    brands = _ordered_unique((p.brand for p in allp), config.SUMMARY_BRAND_ORDER)
 
     brand_blocks = []
     # 분기/시즌 그랜드 집계용
