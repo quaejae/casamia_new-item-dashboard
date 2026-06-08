@@ -20,6 +20,10 @@ from render_html import build_html_table, build_summary_html
 
 st.set_page_config(page_title="신제품 출시 스케줄 대시보드", layout="wide")
 
+# ── 전체 요약: 중요 프로젝트(빨강) 상태는 URL 쿼리파라미터에 보존 ──────────────
+# (링크 클릭=전체 페이지 이동→세션 리셋되므로 session_state 대신 URL에 저장)
+important = set(st.query_params.get_all("imp"))
+
 
 @st.cache_data(show_spinner=False)
 def _load_data_xlsx(path: str, mtime: float):
@@ -92,7 +96,7 @@ tab_names = [config.SUMMARY_TAB_NAME] + list(groupings.keys())
 st.sidebar.divider()
 export_key = st.sidebar.selectbox("📥 PPTX 내보내기 기준", tab_names, index=0)
 if export_key == config.SUMMARY_TAB_NAME:
-    pptx_bytes = pptx_export.build_summary_pptx_bytes(summary)
+    pptx_bytes = pptx_export.build_summary_pptx_bytes(summary, important)
 else:
     pptx_bytes = pptx_export.build_pptx_bytes(groupings.get(export_key, []))
 st.sidebar.download_button(
@@ -116,7 +120,8 @@ with tabs[0]:
     st.markdown(
         f"<h3 style='color:#{config.SUBTITLE_COLOR};margin:10px 0 4px 0;'>"
         f"{summary['main_title']}</h3>", unsafe_allow_html=True)
-    st.markdown(build_summary_html(summary), unsafe_allow_html=True)
+    st.caption("프로젝트명을 클릭하면 빨강(중요)↔네이비 전환 · 색상은 PPTX에도 반영됩니다")
+    st.markdown(build_summary_html(summary, important), unsafe_allow_html=True)
 # 나머지 탭: 그룹별 상세
 for tab, name in zip(tabs[1:], tab_names[1:]):
     with tab:

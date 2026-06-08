@@ -64,6 +64,33 @@ def _set_cell(cell, text="", *, size=None, bold=True, fill=None,
         run.font.color.rgb = _hex(color)
 
 
+def _set_summary_cell(cell, entries, important, size):
+    """요약 월셀: 프로젝트명(네이비/중요시 빨강) + 매출·SKU(흑색), 항목별 2줄."""
+    cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    cell.margin_left = Pt(1); cell.margin_right = Pt(1)
+    cell.margin_top = Pt(1); cell.margin_bottom = Pt(1)
+    cell.fill.background()
+    tf = cell.text_frame; tf.word_wrap = True; tf.clear()
+    if not entries:
+        return
+    navy = config.SUMMARY_NAME_COLOR
+    red = config.SUMMARY_NAME_IMPORTANT
+    detail = config.SUMMARY_DETAIL_COLOR
+    first = True
+    for e in entries:
+        color = red if e["key"] in important else navy
+        p = tf.paragraphs[0] if first else tf.add_paragraph()
+        first = False
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run(); r.text = f"‘{e['abbr']}’"
+        r.font.size = Pt(size); r.font.bold = True
+        r.font.name = config.FONT_NAME; r.font.color.rgb = _hex(color)
+        p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
+        r2 = p2.add_run(); r2.text = f"({e['rev']}/{e['sku']}SKU)"
+        r2.font.size = Pt(size); r2.font.bold = False
+        r2.font.name = config.FONT_NAME; r2.font.color.rgb = _hex(detail)
+
+
 def _apply_gradient(shape, c_from: str, c_to: str):
     """도형에 가로 그라데이션(좌:c_from → 우:c_to) 적용, 테두리 제거.
 
@@ -440,8 +467,9 @@ def _lines(txt: str) -> int:
     return (txt.count("\n") + 1) if txt else 1
 
 
-def _add_summary_slide(prs, S):
+def _add_summary_slide(prs, S, important=None):
     """전체 요약 매트릭스를 한 슬라이드에 맞춰 렌더(폰트 최소 4pt)."""
+    important = important or set()
     margin = Mm(config.PAGE_MARGIN_MM)
     usable_w = prs.slide_width - 2 * margin
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -465,10 +493,12 @@ def _add_summary_slide(prs, S):
     avail = int(bottom_line_y - table_top - Mm(config.PAGE_GAP_MM))
 
     # 행별 최대 줄 수 → 폰트(총량 기준) → 행높이
+    def _celllines(entries):
+        return 2 * len(entries) if entries else 1
     rlines = [1, max(_lines(m[0]) for m in months)]   # header 0,1
     for b in S["brands"]:
         for rr in b["rows"]:
-            rlines.append(max(_lines(c) for c in rr["cells"]))
+            rlines.append(max(_celllines(c) for c in rr["cells"]))
         rlines.append(1)            # 브랜드 계 행
     rlines += [1, 1]                 # 하단 2행
     total_lines = sum(rlines)
@@ -509,7 +539,7 @@ def _add_summary_slide(prs, S):
         for rr in b["rows"]:
             _set_cell(tbl.cell(ri, 1), rr["label"], size=font, fill="F6F6F6")
             for mi in range(NMON):
-                _set_cell(tbl.cell(ri, 2 + mi), rr["cells"][mi], size=font, bold=False)
+                _set_summary_cell(tbl.cell(ri, 2 + mi), rr["cells"][mi], important, font)
             _set_cell(tbl.cell(ri, NC - 1), rr["total"], size=font, fill=TOT)
             ri += 1
         _set_cell(tbl.cell(ri, 1), "계", size=font, fill=TOT)
@@ -552,13 +582,13 @@ def _new_a4():
     return prs
 
 
-def build_summary_pptx(S, out_path: str) -> str:
-    prs = _new_a4(); _add_summary_slide(prs, S); prs.save(out_path)
+def build_summary_pptx(S, out_path: str, important=None) -> str:
+    prs = _new_a4(); _add_summary_slide(prs, S, important); prs.save(out_path)
     return out_path
 
 
-def build_summary_pptx_bytes(S) -> bytes:
-    prs = _new_a4(); _add_summary_slide(prs, S)
+def build_summary_pptx_bytes(S, important=None) -> bytes:
+    prs = _new_a4(); _add_summary_slide(prs, S, important)
     buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
 
 

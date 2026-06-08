@@ -185,8 +185,43 @@ def build_html_table(table: DashboardTable) -> str:
     return css + table_html
 
 
-def build_summary_html(S: dict) -> str:
-    """전체 요약 매트릭스(브랜드×카테고리×월) → HTML 표."""
+def _imp_href(important) -> str:
+    """중요 키 집합 → '?imp=A&imp=B...' URL(상태를 URL에 보존)."""
+    import urllib.parse
+    if not important:
+        return "?"
+    return "?" + "&".join("imp=" + urllib.parse.quote(k, safe="")
+                          for k in sorted(important))
+
+
+def _summary_cell_html(entries, important) -> str:
+    """프로젝트 항목들 → 클릭 가능한 색상 이름(네이비/중요시 빨강) + 흑색 매출/SKU.
+
+    클릭 시 해당 키를 토글한 새 URL로 이동(상태가 URL에 누적되어 양방향 토글).
+    """
+    navy = config.SUMMARY_NAME_COLOR
+    red = config.SUMMARY_NAME_IMPORTANT
+    detail = config.SUMMARY_DETAIL_COLOR
+    parts = []
+    for e in entries:
+        is_imp = e["key"] in important
+        color = red if is_imp else navy
+        toggled = (important - {e["key"]}) if is_imp else (important | {e["key"]})
+        href = _imp_href(toggled)
+        parts.append(
+            f'<a href="{href}" target="_self" class="pname" '
+            f'style="color:#{color};">‘{_esc(e["abbr"])}’</a>'
+            f'<br><span style="color:#{detail};">'
+            f'({_esc(e["rev"])}/{e["sku"]}SKU)</span>')
+    return "<br>".join(parts)
+
+
+def build_summary_html(S: dict, important=None) -> str:
+    """전체 요약 매트릭스(브랜드×카테고리×월) → HTML 표.
+
+    important: 빨강(중요)으로 표시할 프로젝트 key 집합.
+    """
+    important = important or set()
     css = """
     <style>
     .sum-wrap { overflow-x:auto; }
@@ -200,6 +235,8 @@ def build_summary_html(S: dict) -> str:
     table.sum td.cat { background:#F6F6F6; font-weight:700; }
     table.sum td.tot { background:#ECE8E2; font-weight:700; }
     table.sum td.mcell { font-size:9px; }
+    table.sum a.pname { font-weight:700; text-decoration:none; cursor:pointer; }
+    table.sum a.pname:hover { text-decoration:underline; }
     </style>
     """
     months = S["months"]; quarters = S["quarters"]; seasons = S["seasons"]
@@ -224,7 +261,7 @@ def build_summary_html(S: dict) -> str:
                 first = False
             h.append(f'<td class="cat">{_esc(r["label"])}</td>')
             for c in r["cells"]:
-                h.append(f'<td class="mcell">{_esc(c)}</td>')
+                h.append(f'<td class="mcell">{_summary_cell_html(c, important)}</td>')
             h.append(f'<td class="tot">{_esc(r["total"])}</td>')
             h.append('</tr>')
         # 브랜드 계 행(분기별)

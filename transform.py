@@ -369,11 +369,6 @@ def _brand_row_specs(brand, brand_products):
     return rows
 
 
-def _fmt_cell(entries) -> str:
-    """[(abbr, revenue, sku)] → \"'모던'\\n(0.5억/2SKU)\" 형식(여러개면 줄바꿈)."""
-    return "\n".join(f"'{a}'\n({rev}/{sku}SKU)" for a, rev, sku in entries)
-
-
 def _ct(n, sku) -> str:
     return f"{n}({sku})"
 
@@ -409,7 +404,8 @@ def build_summary(data) -> dict:
             mc = _launch_month_col(p)
             if mc is None:
                 continue
-            entry = (_abbr(p.project), p.target_revenue, int(p.sku_count or 0))
+            entry = {"key": f"{p.owner}|{p.project}", "abbr": _abbr(p.project),
+                     "rev": p.target_revenue, "sku": int(p.sku_count or 0)}
             if _is_online_only(p):
                 target = config.SUMMARY_ONLINE_ROW
             else:
@@ -422,23 +418,23 @@ def build_summary(data) -> dict:
                     target = specs[0][0] if specs else config.SUMMARY_ONLINE_ROW
             cells[target][mc].append(entry)
 
-        # 행 구성 + 행별 계
+        # 행 구성 + 행별 계 (cells = 월별 엔트리 리스트 그대로 보관)
         rows_out = []
         brand_q = empty_qs()
         brand_tot = [0, 0]
         for lbl in row_labels:
-            row_cells = [_fmt_cell(cells[lbl][m]) for m in range(nmon)]
+            row_cells = [cells[lbl][m] for m in range(nmon)]
             n = sum(len(cells[lbl][m]) for m in range(nmon))
-            sku = sum(e[2] for m in range(nmon) for e in cells[lbl][m])
+            sku = sum(e["sku"] for m in range(nmon) for e in cells[lbl][m])
             rows_out.append({"label": lbl, "cells": row_cells, "total": _ct(n, sku)})
             # 브랜드 분기/총계
             for m in range(nmon):
                 for e in cells[lbl][m]:
                     qi = q_of(m)
-                    brand_q[qi][0] += 1; brand_q[qi][1] += e[2]
-                    brand_tot[0] += 1; brand_tot[1] += e[2]
-                    grand_q[qi][0] += 1; grand_q[qi][1] += e[2]
-                    grand_total[0] += 1; grand_total[1] += e[2]
+                    brand_q[qi][0] += 1; brand_q[qi][1] += e["sku"]
+                    brand_tot[0] += 1; brand_tot[1] += e["sku"]
+                    grand_q[qi][0] += 1; grand_q[qi][1] += e["sku"]
+                    grand_total[0] += 1; grand_total[1] += e["sku"]
         brand_blocks.append({
             "brand": brand,
             "rows": rows_out,
