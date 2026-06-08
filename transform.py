@@ -318,6 +318,154 @@ def build_online_only(data) -> List[DashboardTable]:
     return _group(allp, specs)
 
 
+# ── 전체 요약(브랜드×카테고리×월 매트릭스) ──────────────────────────────────
+def _launch_month_col(p: RawProduct):
+    """제품의 출시(law 타임라인 인덱스)를 요약 월컬럼(0~11)으로 매핑. 없으면 None."""
+    idx = None
+    for i, c in enumerate(p.timeline):
+        if c and config.LAUNCH_KEYWORD in c:
+            idx = i
+    if idx is None:
+        return None
+    for ci, (_lbl, idxs) in enumerate(config.SUMMARY_MONTHS):
+        if idx in idxs:
+            return ci
+    return None
+
+
+def _abbr(project: str) -> str:
+    """프로젝트명 첫 단어."""
+    return project.split()[0] if project else ""
+
+
+def _brand_row_specs(brand, brand_products):
+    """브랜드의 카테고리 행 사양 [(label, kind, value)] 반환(온라인 제외).
+
+    kind: 'set'(value=카테고리 집합) / 'rest'(value=명시된 집합, 그 외 전부).
+    누락 방지: 정의에 없는 카테고리는 동적 행으로 추가.
+    """
+    cats_present = _ordered_unique((p.category for p in brand_products
+                                    if not _is_online_only(p)), config.CATEGORY_ORDER)
+    spec = config.SUMMARY_BRAND_CATEGORIES.get(brand)
+    rows = []
+    if spec:
+        explicit = set()
+        has_rest = False
+        for lbl, cats in spec:
+            if cats != "__rest__":
+                explicit.update(cats)
+        for lbl, cats in spec:
+            if cats == "__rest__":
+                rows.append((lbl, "rest", set(explicit))); has_rest = True
+            else:
+                rows.append((lbl, "set", set(cats)))
+        if not has_rest:   # rest 없으면 미정의 카테고리를 동적 행으로
+            for c in cats_present:
+                if c not in explicit:
+                    rows.append((_lbl(c), "set", {c}))
+    else:
+        for c in cats_present:
+            rows.append((_lbl(c), "set", {c}))
+    return rows
+
+
+def _fmt_cell(entries) -> str:
+    """[(abbr, revenue, sku)] → \"'모던'\\n(0.5억/2SKU)\" 형식(여러개면 줄바꿈)."""
+    return "\n".join(f"'{a}'\n({rev}/{sku}SKU)" for a, rev, sku in entries)
+
+
+def _ct(n, sku) -> str:
+    return f"{n}({sku})"
+
+
+def build_summary(data) -> dict:
+    """모든 프로젝트를 브랜드×카테고리×월 매트릭스로 요약."""
+    allp = _all_products(data)
+    nmon = len(config.SUMMARY_MONTHS)
+    brands = _ordered_unique((p.brand for p in allp), config.BRAND_ORDER)
+
+    brand_blocks = []
+    # 분기/시즌 그랜드 집계용
+    def empty_qs():
+        return [[0, 0] for _ in config.SUMMARY_QUARTERS]
+    grand_q = empty_qs()
+    grand_total = [0, 0]
+
+    def q_of(moncol):   # 월컬럼 → 분기 인덱스
+        for qi, (_l, st, sp) in enumerate(config.SUMMARY_QUARTERS):
+            if st <= moncol < st + sp:
+                return qi
+        return len(config.SUMMARY_QUARTERS) - 1
+
+    for brand in brands:
+        bps = [p for p in allp if p.brand == brand]
+        specs = _brand_row_specs(brand, bps)
+        # 행 라벨 목록 + 온라인 행
+        row_labels = [s[0] for s in specs] + [config.SUMMARY_ONLINE_ROW]
+        # 행별 월셀 엔트리: label -> [ [entries]*nmon ]
+        cells = {lbl: [[] for _ in range(nmon)] for lbl in row_labels}
+
+        for p in bps:
+            mc = _launch_month_col(p)
+            if mc is None:
+                continue
+            entry = (_abbr(p.project), p.target_revenue, int(p.sku_count or 0))
+            if _is_online_only(p):
+                target = config.SUMMARY_ONLINE_ROW
+            else:
+                target = None
+                for lbl, kind, val in specs:
+                    if (kind == "set" and p.category in val) or \
+                       (kind == "rest" and p.category not in val):
+                        target = lbl; break
+                if target is None:
+                    target = specs[0][0] if specs else config.SUMMARY_ONLINE_ROW
+            cells[target][mc].append(entry)
+
+        # 행 구성 + 행별 계
+        rows_out = []
+        brand_q = empty_qs()
+        brand_tot = [0, 0]
+        for lbl in row_labels:
+            row_cells = [_fmt_cell(cells[lbl][m]) for m in range(nmon)]
+            n = sum(len(cells[lbl][m]) for m in range(nmon))
+            sku = sum(e[2] for m in range(nmon) for e in cells[lbl][m])
+            rows_out.append({"label": lbl, "cells": row_cells, "total": _ct(n, sku)})
+            # 브랜드 분기/총계
+            for m in range(nmon):
+                for e in cells[lbl][m]:
+                    qi = q_of(m)
+                    brand_q[qi][0] += 1; brand_q[qi][1] += e[2]
+                    brand_tot[0] += 1; brand_tot[1] += e[2]
+                    grand_q[qi][0] += 1; grand_q[qi][1] += e[2]
+                    grand_total[0] += 1; grand_total[1] += e[2]
+        brand_blocks.append({
+            "brand": brand,
+            "rows": rows_out,
+            "total_q": [_ct(*brand_q[qi]) for qi in range(len(brand_q))],
+            "total": _ct(*brand_tot),
+        })
+
+    # 시즌 그랜드 = 분기 그랜드를 시즌 범위(월컬럼)로 합산
+    season_acc = [[0, 0] for _ in config.SUMMARY_SEASONS]
+    for si, (_l, st, sp) in enumerate(config.SUMMARY_SEASONS):
+        for qi, (_ql, qst, qsp) in enumerate(config.SUMMARY_QUARTERS):
+            if st <= qst < st + sp:
+                season_acc[si][0] += grand_q[qi][0]
+                season_acc[si][1] += grand_q[qi][1]
+
+    return {
+        "main_title": config.SUMMARY_MAIN_TITLE,
+        "months": config.SUMMARY_MONTHS,
+        "quarters": config.SUMMARY_QUARTERS,
+        "seasons": config.SUMMARY_SEASONS,
+        "brands": brand_blocks,
+        "grand_q": [_ct(*grand_q[qi]) for qi in range(len(grand_q))],
+        "grand_season": [_ct(*season_acc[si]) for si in range(len(season_acc))],
+        "grand_total": _ct(*grand_total),
+    }
+
+
 # 탭 정의: (탭 이름, 빌더 함수)
 TAB_BUILDERS = [
     ("카테고리별", build_by_category),

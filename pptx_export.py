@@ -436,6 +436,132 @@ def _build_presentation(tables: List[DashboardTable]) -> Presentation:
     return prs
 
 
+def _lines(txt: str) -> int:
+    return (txt.count("\n") + 1) if txt else 1
+
+
+def _add_summary_slide(prs, S):
+    """전체 요약 매트릭스를 한 슬라이드에 맞춰 렌더(폰트 최소 4pt)."""
+    margin = Mm(config.PAGE_MARGIN_MM)
+    usable_w = prs.slide_width - 2 * margin
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    # 주제목 + 장식선
+    tb = slide.shapes.add_textbox(margin, margin, usable_w, Mm(8))
+    r = tb.text_frame.paragraphs[0].add_run(); r.text = S["main_title"]
+    r.font.size = Pt(config.FONT_TITLE); r.font.bold = True
+    r.font.name = config.FONT_NAME; r.font.color.rgb = _hex("000000")
+    ln = slide.shapes.add_connector(2, margin, margin + Mm(8),
+                                    margin + usable_w, margin + Mm(8))
+    ln.line.color.rgb = _hex(config.TITLE_RULE_COLOR)
+    ln.line.width = Pt(config.TITLE_RULE_WIDTH_PT); ln.shadow.inherit = False
+
+    months = S["months"]; quarters = S["quarters"]; seasons = S["seasons"]
+    NMON = len(months); NC = 2 + NMON + 1
+    body = sum(len(b["rows"]) + 1 for b in S["brands"])
+    NR = 2 + body + 2
+
+    table_top = margin + Mm(10)
+    bottom_line_y = prs.slide_height - Mm(config.FOOTER_LINE_MARGIN_MM)
+    avail = int(bottom_line_y - table_top - Mm(config.PAGE_GAP_MM))
+
+    # 행별 최대 줄 수 → 폰트(총량 기준) → 행높이
+    rlines = [1, max(_lines(m[0]) for m in months)]   # header 0,1
+    for b in S["brands"]:
+        for rr in b["rows"]:
+            rlines.append(max(_lines(c) for c in rr["cells"]))
+        rlines.append(1)            # 브랜드 계 행
+    rlines += [1, 1]                 # 하단 2행
+    total_lines = sum(rlines)
+    avail_pt = avail / 12700.0
+    font = int(avail_pt / (total_lines * 1.32))
+    font = max(config.SUMMARY_FONT_MIN, min(config.SUMMARY_FONT_MAX, font))
+
+    weights = [1.4, 1.9] + [1.0] * NMON + [1.2]
+    tw = sum(weights)
+    widths = [int(usable_w * w / tw) for w in weights]
+
+    gf = slide.shapes.add_table(NR, NC, margin, table_top, usable_w, avail)
+    tbl = gf.table
+    tbl.first_row = False; tbl.horz_banding = False
+    for ci, w in enumerate(widths):
+        tbl.columns[ci].width = Emu(w)
+    for ri in range(NR):
+        tbl.rows[ri].height = int(Pt(font * 1.28) * rlines[ri])
+
+    HEAD = config.HEADER_FILL; TOT = config.SUMMARY_FILL
+
+    # 헤더 2행
+    a = tbl.cell(0, 0); a.merge(tbl.cell(1, 0)); _set_cell(a, "브랜드", size=font, fill=HEAD)
+    a = tbl.cell(0, 1); a.merge(tbl.cell(1, 1)); _set_cell(a, "카테고리", size=font, fill=HEAD)
+    for qlbl, st, sp in quarters:
+        c0 = tbl.cell(0, 2 + st)
+        if sp > 1:
+            c0.merge(tbl.cell(0, 2 + st + sp - 1))
+        _set_cell(c0, qlbl, size=font, fill=HEAD)
+    a = tbl.cell(0, NC - 1); a.merge(tbl.cell(1, NC - 1)); _set_cell(a, "계", size=font, fill=HEAD)
+    for mi, (mlbl, _idx) in enumerate(months):
+        _set_cell(tbl.cell(1, 2 + mi), mlbl, size=font, fill=HEAD)
+
+    # 브랜드 블록
+    ri = 2
+    for b in S["brands"]:
+        bstart = ri
+        for rr in b["rows"]:
+            _set_cell(tbl.cell(ri, 1), rr["label"], size=font, fill="F6F6F6")
+            for mi in range(NMON):
+                _set_cell(tbl.cell(ri, 2 + mi), rr["cells"][mi], size=font, bold=False)
+            _set_cell(tbl.cell(ri, NC - 1), rr["total"], size=font, fill=TOT)
+            ri += 1
+        _set_cell(tbl.cell(ri, 1), "계", size=font, fill=TOT)
+        for qi, (_q, st, sp) in enumerate(quarters):
+            c0 = tbl.cell(ri, 2 + st)
+            if sp > 1:
+                c0.merge(tbl.cell(ri, 2 + st + sp - 1))
+            _set_cell(c0, b["total_q"][qi], size=font, fill=TOT)
+        _set_cell(tbl.cell(ri, NC - 1), b["total"], size=font, fill=TOT)
+        ri += 1
+        bc = tbl.cell(bstart, 0); bc.merge(tbl.cell(ri - 1, 0))
+        _set_cell(bc, b["brand"], size=font, fill="EFEFEF")
+
+    # 하단 그랜드: 분기 / 시즌
+    rq, rs = ri, ri + 1
+    a = tbl.cell(rq, 0); a.merge(tbl.cell(rs, 1)); _set_cell(a, "총계", size=font, fill=TOT)
+    for qi, (qlbl, st, sp) in enumerate(quarters):
+        c0 = tbl.cell(rq, 2 + st)
+        if sp > 1:
+            c0.merge(tbl.cell(rq, 2 + st + sp - 1))
+        _set_cell(c0, f"{qlbl} {S['grand_q'][qi]}", size=font, fill=TOT)
+    a = tbl.cell(rq, NC - 1); a.merge(tbl.cell(rs, NC - 1))
+    _set_cell(a, S["grand_total"], size=font, fill=TOT)
+    for si, (slbl, st, sp) in enumerate(seasons):
+        c0 = tbl.cell(rs, 2 + st)
+        if sp > 1:
+            c0.merge(tbl.cell(rs, 2 + st + sp - 1))
+        _set_cell(c0, f"{slbl} {S['grand_season'][si]}", size=font, fill=TOT)
+
+    for r_ in range(NR):
+        for c_ in range(NC):
+            _set_cell_border(tbl.cell(r_, c_))
+    _add_footer(slide, margin, usable_w, prs.slide_height)
+
+
+def _new_a4():
+    prs = Presentation()
+    prs.slide_width = Mm(config.A4_LANDSCAPE_WIDTH_MM)
+    prs.slide_height = Mm(config.A4_LANDSCAPE_HEIGHT_MM)
+    return prs
+
+
+def build_summary_pptx(S, out_path: str) -> str:
+    prs = _new_a4(); _add_summary_slide(prs, S); prs.save(out_path)
+    return out_path
+
+
+def build_summary_pptx_bytes(S) -> bytes:
+    prs = _new_a4(); _add_summary_slide(prs, S)
+    buf = io.BytesIO(); prs.save(buf); return buf.getvalue()
+
+
 def build_pptx(tables: List[DashboardTable], out_path: str) -> str:
     _build_presentation(tables).save(out_path)
     return out_path

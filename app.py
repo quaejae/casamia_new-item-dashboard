@@ -16,7 +16,7 @@ import config
 import data_loader
 import transform
 import pptx_export
-from render_html import build_html_table
+from render_html import build_html_table, build_summary_html
 
 st.set_page_config(page_title="신제품 출시 스케줄 대시보드", layout="wide")
 
@@ -82,24 +82,26 @@ else:
     mode_label = "공개 링크" if config.SHEETS_MODE == "public" else "서비스 계정"
     st.sidebar.caption(f"출처: Google Sheets ({mode_label})")
 
-# ── 탭별 그룹화 ──────────────────────────────────────────────────────────────
+# ── 탭별 그룹화 + 전체 요약 ──────────────────────────────────────────────────
+summary = transform.build_summary(data)
 groupings = transform.build_groupings(data)   # {탭이름: [DashboardTable,...]}
-tab_names = list(groupings.keys())
+# 전체 요약을 맨 앞(첫 화면) 탭으로
+tab_names = [config.SUMMARY_TAB_NAME] + list(groupings.keys())
 
 # ── 사이드바: PPTX 내보내기 ──────────────────────────────────────────────────
 st.sidebar.divider()
-export_key = st.sidebar.selectbox("📥 PPTX 내보내기 기준", tab_names,
-                                  index=len(tab_names) - 1)  # 기본 담당자별
-export_tables = groupings.get(export_key, [])
-if export_tables:
-    pptx_bytes = pptx_export.build_pptx_bytes(export_tables)
-    st.sidebar.download_button(
-        f"PPTX 내보내기 ({export_key}, A4 가로)",
-        data=pptx_bytes,
-        file_name=f"신제품_출시스케줄_대시보드_{export_key}.pptx",
-        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        use_container_width=True,
-    )
+export_key = st.sidebar.selectbox("📥 PPTX 내보내기 기준", tab_names, index=0)
+if export_key == config.SUMMARY_TAB_NAME:
+    pptx_bytes = pptx_export.build_summary_pptx_bytes(summary)
+else:
+    pptx_bytes = pptx_export.build_pptx_bytes(groupings.get(export_key, []))
+st.sidebar.download_button(
+    f"PPTX 내보내기 ({export_key})",
+    data=pptx_bytes,
+    file_name=f"신제품_출시스케줄_{export_key}.pptx",
+    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    use_container_width=True,
+)
 
 # ── 본문 ─────────────────────────────────────────────────────────────────────
 st.title(config.MAIN_TITLE)
@@ -109,7 +111,14 @@ st.markdown(
 st.caption("정렬 기준 탭을 선택해 보세요 · 실시간 미리보기")
 
 tabs = st.tabs(tab_names)
-for tab, name in zip(tabs, tab_names):
+# 첫 탭: 전체 요약
+with tabs[0]:
+    st.markdown(
+        f"<h3 style='color:#{config.SUBTITLE_COLOR};margin:10px 0 4px 0;'>"
+        f"{summary['main_title']}</h3>", unsafe_allow_html=True)
+    st.markdown(build_summary_html(summary), unsafe_allow_html=True)
+# 나머지 탭: 그룹별 상세
+for tab, name in zip(tabs[1:], tab_names[1:]):
     with tab:
         tables = groupings[name]
         if not tables:

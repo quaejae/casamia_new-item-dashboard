@@ -183,3 +183,63 @@ def build_html_table(table: DashboardTable) -> str:
         + '</table></div>'
     )
     return css + table_html
+
+
+def build_summary_html(S: dict) -> str:
+    """전체 요약 매트릭스(브랜드×카테고리×월) → HTML 표."""
+    css = """
+    <style>
+    .sum-wrap { overflow-x:auto; }
+    table.sum { border-collapse:collapse; font-family:'맑은 고딕',sans-serif;
+                font-size:10px; width:100%; table-layout:fixed; }
+    table.sum th, table.sum td { border:1px solid #BFBFBF; padding:1px 2px;
+                text-align:center; vertical-align:middle; word-break:break-all;
+                line-height:1.15; }
+    table.sum th { background:#E7E7E6; font-weight:700; }
+    table.sum td.brand { background:#EFEFEF; font-weight:700; }
+    table.sum td.cat { background:#F6F6F6; font-weight:700; }
+    table.sum td.tot { background:#ECE8E2; font-weight:700; }
+    table.sum td.mcell { font-size:9px; }
+    </style>
+    """
+    months = S["months"]; quarters = S["quarters"]; seasons = S["seasons"]
+    h = ['<div class="sum-wrap"><table class="sum">']
+    # 헤더 2행
+    h.append('<tr><th rowspan="2">브랜드</th><th rowspan="2">카테고리</th>')
+    for qlbl, _st, sp in quarters:
+        h.append(f'<th colspan="{sp}">{_esc(qlbl)}</th>')
+    h.append('<th rowspan="2">계</th></tr>')
+    h.append('<tr>')
+    for mlbl, _idx in months:
+        h.append(f'<th>{_esc(mlbl)}</th>')
+    h.append('</tr>')
+    # 브랜드 블록
+    for b in S["brands"]:
+        nblock = len(b["rows"]) + 1
+        first = True
+        for r in b["rows"]:
+            h.append('<tr>')
+            if first:
+                h.append(f'<td rowspan="{nblock}" class="brand">{_esc(b["brand"])}</td>')
+                first = False
+            h.append(f'<td class="cat">{_esc(r["label"])}</td>')
+            for c in r["cells"]:
+                h.append(f'<td class="mcell">{_esc(c)}</td>')
+            h.append(f'<td class="tot">{_esc(r["total"])}</td>')
+            h.append('</tr>')
+        # 브랜드 계 행(분기별)
+        h.append('<tr><td class="cat tot">계</td>')
+        for qi, (_q, _st, sp) in enumerate(quarters):
+            h.append(f'<td colspan="{sp}" class="tot">{_esc(b["total_q"][qi])}</td>')
+        h.append(f'<td class="tot">{_esc(b["total"])}</td></tr>')
+    # 하단 그랜드: 분기 / 시즌
+    h.append('<tr><td rowspan="2" colspan="2" class="tot">총계</td>')
+    for qi, (qlbl, _st, sp) in enumerate(quarters):
+        h.append(f'<td colspan="{sp}" class="tot">{_esc(qlbl)} {_esc(S["grand_q"][qi])}</td>')
+    h.append(f'<td rowspan="2" class="tot">{_esc(S["grand_total"])}</td></tr>')
+    h.append('<tr>')
+    for si, (slbl, _st, sp) in enumerate(seasons):
+        h.append(f'<td colspan="{sp}" class="tot">{_esc(slbl)} {_esc(S["grand_season"][si])}</td>')
+    h.append('</tr>')
+    h.append('</table></div>')
+    return css + "".join(h)
