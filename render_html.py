@@ -226,19 +226,24 @@ def build_summary_html(S: dict, important=None) -> str:
     <style>
     .sum-wrap { overflow-x:auto; }
     table.sum { border-collapse:collapse; font-family:'맑은 고딕',sans-serif;
-                font-size:10px; width:100%; table-layout:fixed; }
-    table.sum th, table.sum td { border:1px solid #BFBFBF; padding:1px 2px;
+                font-size:__FONT__px; width:100%; table-layout:fixed;
+                min-width:__MINW__px; }
+    table.sum th, table.sum td { border:1px solid #BFBFBF; padding:__PAD__;
                 text-align:center; vertical-align:middle; word-break:break-all;
-                line-height:1.15; }
+                line-height:__LINE__; }
     table.sum th { background:#E7E7E6; font-weight:700; }
     table.sum td.brand { background:#EFEFEF; font-weight:700; }
     table.sum td.cat { background:#F6F6F6; font-weight:700; }
     table.sum td.tot { background:#ECE8E2; font-weight:700; }
-    table.sum td.mcell { font-size:9px; }
+    table.sum td.mcell { font-size:__CELL__px; }
     table.sum a.pname { font-weight:700; text-decoration:none; cursor:pointer; }
     table.sum a.pname:hover { text-decoration:underline; }
     </style>
-    """
+    """.replace("__FONT__", str(config.SUMMARY_WEB_FONT)) \
+       .replace("__CELL__", str(config.SUMMARY_WEB_CELL_FONT)) \
+       .replace("__PAD__", config.SUMMARY_WEB_PAD) \
+       .replace("__LINE__", str(config.SUMMARY_WEB_LINE)) \
+       .replace("__MINW__", str(config.SUMMARY_WEB_MIN_WIDTH))
     months = S["months"]; quarters = S["quarters"]; seasons = S["seasons"]
     h = ['<div class="sum-wrap"><table class="sum">']
     # 헤더 2행
