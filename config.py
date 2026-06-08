@@ -22,6 +22,14 @@ TITLE_RULE_ENABLED = True
 TITLE_RULE_COLOR = "181818"     # 거의 검정
 TITLE_RULE_WIDTH_PT = 1.0
 
+# 하단 푸터: 장식선 + 브랜드 텍스트(슬라이드마다 고정)
+FOOTER_ENABLED = True
+FOOTER_TEXT = "SHINSEGAE CASA"
+FOOTER_FONT = 9                 # pt
+FOOTER_COLOR = "404040"
+FOOTER_LINE_MARGIN_MM = 9       # 하단 장식선이 슬라이드 밑변에서 떨어진 거리
+PAGE_GAP_MM = 2                 # 표와 하단 장식선 사이 최소 여백
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. 데이터 소스 (1단계: 로컬 xlsx)
 # ─────────────────────────────────────────────────────────────────────────────

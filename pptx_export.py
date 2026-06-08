@@ -139,11 +139,12 @@ def _set_cell_border(cell):
         tcPr.insert(0, ln)
 
 
-def _add_title_block(slide, table: DashboardTable, left_emu, top_emu, width_emu):
-    # 주제목
+def _add_title_block(slide, main_title, subtitle_text, left_emu, top_emu, width_emu):
+    """주제목(고정 위치) → 장식선 → 소제목(표 바로 위). 표 시작 top 반환."""
+    # 주제목 (좌상단 고정)
     tb = slide.shapes.add_textbox(left_emu, top_emu, width_emu, Mm(8))
     p = tb.text_frame.paragraphs[0]
-    r = p.add_run(); r.text = table.main_title
+    r = p.add_run(); r.text = main_title
     r.font.size = Pt(config.FONT_TITLE); r.font.bold = True
     r.font.name = config.FONT_NAME; r.font.color.rgb = _hex("000000")
     # 주제목 아래 장식선
@@ -153,13 +154,31 @@ def _add_title_block(slide, table: DashboardTable, left_emu, top_emu, width_emu)
         ln.line.color.rgb = _hex(config.TITLE_RULE_COLOR)
         ln.line.width = Pt(config.TITLE_RULE_WIDTH_PT)
         ln.shadow.inherit = False
-    # 소제목
+    # 소제목 (표 바로 위)
     sb = slide.shapes.add_textbox(left_emu, top_emu + Mm(9), width_emu, Mm(7))
     p2 = sb.text_frame.paragraphs[0]
-    r2 = p2.add_run(); r2.text = f"{config.SUBTITLE_PREFIX}{table.owner}"
+    r2 = p2.add_run(); r2.text = subtitle_text
     r2.font.size = Pt(config.FONT_SUBTITLE); r2.font.bold = True
     r2.font.name = config.FONT_NAME; r2.font.color.rgb = _hex(config.SUBTITLE_COLOR)
     return top_emu + Mm(17)   # 표 시작 top
+
+
+def _add_footer(slide, left_emu, width_emu, slide_height):
+    """하단 장식선 + 'SHINSEGAE CASA' 브랜드 텍스트(슬라이드마다 고정)."""
+    if not config.FOOTER_ENABLED:
+        return
+    y = slide_height - Mm(config.FOOTER_LINE_MARGIN_MM)
+    ln = slide.shapes.add_connector(2, left_emu, y, left_emu + width_emu, y)
+    ln.line.color.rgb = _hex(config.TITLE_RULE_COLOR)
+    ln.line.width = Pt(config.TITLE_RULE_WIDTH_PT)
+    ln.shadow.inherit = False
+    tb = slide.shapes.add_textbox(left_emu, y, width_emu,
+                                  Mm(config.FOOTER_LINE_MARGIN_MM))
+    tf = tb.text_frame; tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+    r = p.add_run(); r.text = config.FOOTER_TEXT
+    r.font.size = Pt(config.FOOTER_FONT); r.font.bold = True
+    r.font.name = config.FONT_NAME; r.font.color.rgb = _hex(config.FOOTER_COLOR)
 
 
 def _build_header(tbl, show_q: bool):
@@ -187,9 +206,11 @@ def _build_header(tbl, show_q: bool):
                   size=config.FONT_HEADER, fill=config.HEADER_FILL)
 
 
-def _build_table(slide, table: DashboardTable, left_emu, top_emu, usable_emu):
-    n_data = len(table.rows)
-    n_rows = 2 + n_data + 1   # 헤더2 + 데이터 + 요약1
+def _build_table(slide, rows, summary, show_q, left_emu, top_emu, usable_emu):
+    """행 묶음(rows)을 한 슬라이드의 표로 렌더. summary 가 None 이면 요약행 생략."""
+    n_data = len(rows)
+    has_summary = summary is not None
+    n_rows = 2 + n_data + (1 if has_summary else 0)
     widths = _col_widths(usable_emu)
 
     gf = slide.shapes.add_table(n_rows, N_COLS, left_emu, top_emu,
@@ -203,14 +224,15 @@ def _build_table(slide, table: DashboardTable, left_emu, top_emu, usable_emu):
     tbl.rows[1].height = Pt(config.ROW_H_MONTH)
     for ri in range(2, 2 + n_data):
         tbl.rows[ri].height = Pt(config.ROW_H_DATA)
-    tbl.rows[n_rows - 1].height = Pt(config.ROW_H_SUMMARY)
+    if has_summary:
+        tbl.rows[n_rows - 1].height = Pt(config.ROW_H_SUMMARY)
 
-    _build_header(tbl, table.show_q_label)
+    _build_header(tbl, show_q)
 
     # 데이터 행
     image_jobs = []   # (table_row, bytes, ext) — 표 생성 후 오버레이
     arrow_jobs = []   # (di, source_idx, launch_idx) — 출시 화살표
-    for di, row in enumerate(table.rows):
+    for di, row in enumerate(rows):
         ri = 2 + di
         _set_cell(tbl.cell(ri, 0), row.no_label, size=config.FONT_BODY)
         _set_cell(tbl.cell(ri, 1), row.series_cell, size=config.FONT_BODY)
@@ -239,31 +261,29 @@ def _build_table(slide, table: DashboardTable, left_emu, top_emu, usable_emu):
     start = 2
     for di in range(1, n_data + 1):
         ri = 2 + di
-        is_new = (di == n_data) or (table.rows[di].no_label != "")
+        is_new = (di == n_data) or (rows[di].no_label != "")
         if is_new:
             if ri - 1 > start:
                 tbl.cell(start, 0).merge(tbl.cell(ri - 1, 0))
             start = ri
 
-    # 요약행
-    sr = n_rows - 1
-    s = table.summary
-    # 라벨: 정보 10열 병합
-    a = tbl.cell(sr, 0); b = tbl.cell(sr, N_INFO - 1)
-    a.merge(b)
-    _set_cell(a, s.label, size=config.FONT_SUMMARY, fill=config.SUMMARY_FILL,
-              align=PP_ALIGN.CENTER)
-    # 월 컬럼: 각 분기에 해당하는 칸들을 병합해 집계값 표시
-    for qi, (_, start_m, length) in enumerate(config.QUARTERS):
-        c0 = tbl.cell(sr, MONTH_BASE + start_m)
-        if length > 1:
-            c1 = tbl.cell(sr, MONTH_BASE + start_m + length - 1)
-            c0.merge(c1)
-        _set_cell(c0, s.per_quarter[qi],
+    # 요약행 (마지막 페이지에만)
+    if has_summary:
+        sr = n_rows - 1
+        s = summary
+        a = tbl.cell(sr, 0); b = tbl.cell(sr, N_INFO - 1)
+        a.merge(b)
+        _set_cell(a, s.label, size=config.FONT_SUMMARY, fill=config.SUMMARY_FILL,
+                  align=PP_ALIGN.CENTER)
+        for qi, (_, start_m, length) in enumerate(config.QUARTERS):
+            c0 = tbl.cell(sr, MONTH_BASE + start_m)
+            if length > 1:
+                c1 = tbl.cell(sr, MONTH_BASE + start_m + length - 1)
+                c0.merge(c1)
+            _set_cell(c0, s.per_quarter[qi],
+                      size=config.FONT_SUMMARY, fill=config.SUMMARY_FILL)
+        _set_cell(tbl.cell(sr, NOTE_COL), f"{s.series_count}({s.total_sku})",
                   size=config.FONT_SUMMARY, fill=config.SUMMARY_FILL)
-    # 비고: 총계
-    _set_cell(tbl.cell(sr, NOTE_COL), f"{s.series_count}({s.total_sku})",
-              size=config.FONT_SUMMARY, fill=config.SUMMARY_FILL)
 
     # 모든 셀에 회색 테두리 적용
     for ri in range(n_rows):
@@ -349,6 +369,29 @@ def _overlay_images(slide, table_left, table_top, widths, image_jobs):
         pic.top = int(cell_top + (h_data - pic.height) / 2)
 
 
+def _paginate_rows(rows, capacity):
+    """행을 시리즈 블록(no_label!='' 시작) 단위로 페이지에 채워 분할.
+
+    시리즈가 페이지 경계에서 쪼개지지 않도록 블록째 배치.
+    """
+    blocks = []
+    cur = []
+    for r in rows:
+        if r.no_label != "" and cur:
+            blocks.append(cur); cur = []
+        cur.append(r)
+    if cur:
+        blocks.append(cur)
+    pages, page = [], []
+    for blk in blocks:
+        if page and len(page) + len(blk) > capacity:
+            pages.append(page); page = []
+        page.extend(blk)
+    if page:
+        pages.append(page)
+    return pages or [[]]
+
+
 def _build_presentation(tables: List[DashboardTable]) -> Presentation:
     prs = Presentation()
     prs.slide_width = Mm(config.A4_LANDSCAPE_WIDTH_MM)
@@ -357,22 +400,39 @@ def _build_presentation(tables: List[DashboardTable]) -> Presentation:
 
     margin = Mm(config.PAGE_MARGIN_MM)
     usable_w = prs.slide_width - 2 * margin
+    table_top = margin + Mm(17)
+    bottom_line_y = prs.slide_height - Mm(config.FOOTER_LINE_MARGIN_MM)
+
+    # 한 슬라이드(장식선 사이)에 들어갈 데이터 행 수 = 페이지 용량
+    avail = bottom_line_y - table_top - Mm(config.PAGE_GAP_MM)
+    header_h = Pt(config.ROW_H_HEADER) + Pt(config.ROW_H_MONTH)
+    capacity = max(1, int((avail - header_h - Pt(config.ROW_H_SUMMARY))
+                          / Pt(config.ROW_H_DATA)))
+
+    cur_mi = current_month_index() if config.CURRENT_MONTH_HIGHLIGHT else None
 
     for table in tables:
-        slide = prs.slides.add_slide(blank)
-        table_top = _add_title_block(slide, table, margin, margin, usable_w)
-        gf, widths, image_jobs, arrow_jobs = _build_table(
-            slide, table, margin, table_top, usable_w)
-        if arrow_jobs:
-            _add_launch_arrows(slide, margin, table_top, widths, arrow_jobs, gf)
-        if image_jobs:
-            _overlay_images(slide, margin, table_top, widths, image_jobs)
-        # 오늘 날짜의 월 열 강조 (표 위에 그려 테두리가 보이도록)
-        if config.CURRENT_MONTH_HIGHLIGHT:
-            mi = current_month_index()
-            if mi is not None:
+        pages = _paginate_rows(table.rows, capacity)
+        total = len(pages)
+        for pi, page_rows in enumerate(pages):
+            slide = prs.slides.add_slide(blank)
+            subtitle = f"{config.SUBTITLE_PREFIX}{table.owner}"
+            if total > 1:
+                subtitle += f" ({pi + 1}/{total})"
+            _add_title_block(slide, table.main_title, subtitle,
+                             margin, margin, usable_w)
+            summary = table.summary if pi == total - 1 else None
+            gf, widths, image_jobs, arrow_jobs = _build_table(
+                slide, page_rows, summary, table.show_q_label,
+                margin, table_top, usable_w)
+            if arrow_jobs:
+                _add_launch_arrows(slide, margin, table_top, widths, arrow_jobs, gf)
+            if image_jobs:
+                _overlay_images(slide, margin, table_top, widths, image_jobs)
+            if cur_mi is not None and page_rows:
                 _add_month_highlight(slide, margin, table_top, widths,
-                                     len(table.rows), mi)
+                                     len(page_rows), cur_mi)
+            _add_footer(slide, margin, usable_w, prs.slide_height)
     return prs
 
 
