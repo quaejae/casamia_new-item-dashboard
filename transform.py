@@ -265,25 +265,44 @@ def _group(allp, ordered_specs) -> List[DashboardTable]:
     return tables
 
 
+def _ordered_unique(values, preferred):
+    """preferred 순서대로(존재하는 것만) + 그 외 데이터 등장 순으로 추가(중복 제거).
+
+    데이터에 새 값이 생겨도 누락 없이 자동 포함된다.
+    """
+    seen = list(dict.fromkeys(v for v in values))   # 첫 등장 순 유니크
+    out = [v for v in preferred if v in seen]
+    out += [v for v in seen if v not in preferred]
+    return out
+
+
+def _lbl(v) -> str:
+    return v if v else config.UNCLASSIFIED_LABEL
+
+
 def build_by_category(data) -> List[DashboardTable]:
-    """카테고리별(매트리스·베드룸은 브랜드로 세분)."""
+    """카테고리별(설정의 SPLIT 카테고리는 브랜드로 세분). 신규 카테고리/브랜드 자동 포함."""
     allp = _all_products(data)
-    specs = [
-        ("매트리스_마테라소", lambda p: p.category == "매트리스" and p.brand == "마테라소"),
-        ("매트리스_까사미아", lambda p: p.category == "매트리스" and p.brand == "까사미아"),
-        ("베드룸_마테라소", lambda p: p.category == "베드룸" and p.brand == "마테라소"),
-        ("베드룸_까사미아", lambda p: p.category == "베드룸" and p.brand == "까사미아"),
-        ("수납장", lambda p: p.category == "수납장"),
-        ("홈오피스", lambda p: p.category == "홈오피스"),
-        ("키즈", lambda p: p.category == "키즈"),
-    ]
+    cats = _ordered_unique((p.category for p in allp), config.CATEGORY_ORDER)
+    brands = _ordered_unique((p.brand for p in allp), config.BRAND_ORDER)
+    specs = []
+    for cat in cats:
+        if cat in config.SPLIT_BY_BRAND_CATEGORIES:
+            present = [b for b in brands
+                       if any(p.category == cat and p.brand == b for p in allp)]
+            for b in present:
+                specs.append((f"{_lbl(cat)}_{_lbl(b)}",
+                              (lambda c, br: lambda p: p.category == c and p.brand == br)(cat, b)))
+        else:
+            specs.append((_lbl(cat), (lambda c: lambda p: p.category == c)(cat)))
     return _group(allp, specs)
 
 
 def build_by_brand(data) -> List[DashboardTable]:
-    """브랜드별."""
+    """브랜드별. 신규 브랜드 자동 포함."""
     allp = _all_products(data)
-    specs = [(b, (lambda b: lambda p: p.brand == b)(b)) for b in ("마테라소", "까사미아")]
+    brands = _ordered_unique((p.brand for p in allp), config.BRAND_ORDER)
+    specs = [(_lbl(b), (lambda br: lambda p: p.brand == br)(b)) for b in brands]
     return _group(allp, specs)
 
 
@@ -292,10 +311,10 @@ def _is_online_only(p: RawProduct) -> bool:
 
 
 def build_online_only(data) -> List[DashboardTable]:
-    """온라인 전용(채널=온라인) 제품을 카테고리별로."""
+    """온라인 전용(채널=온라인) 제품을 카테고리별로. 신규 카테고리 자동 포함."""
     allp = [p for p in _all_products(data) if _is_online_only(p)]
-    specs = [(c, (lambda c: lambda p: p.category == c)(c))
-             for c in ("매트리스", "베드룸", "수납장", "홈오피스", "키즈")]
+    cats = _ordered_unique((p.category for p in allp), config.CATEGORY_ORDER)
+    specs = [(_lbl(c), (lambda cc: lambda p: p.category == cc)(c)) for c in cats]
     return _group(allp, specs)
 
 
