@@ -20,6 +20,29 @@ from render_html import build_html_table, build_summary_html
 
 st.set_page_config(page_title="신제품 출시 스케줄 대시보드", layout="wide")
 
+# ── 검색엔진 색인 차단(noindex) ────────────────────────────────────────────────
+# 공개 링크 접속은 그대로 두되, 크롤러가 이 앱을 색인하지 못하게 부모 문서 <head>에
+# robots 메타를 주입한다. streamlit.app은 robots.txt로 막지 않으므로 코드로 처리.
+# (components.html 은 같은 출처 srcdoc iframe → window.parent.document 접근 가능)
+import streamlit.components.v1 as _components
+
+_components.html(
+    """
+    <script>
+      try {
+        var d = window.parent.document;
+        if (!d.querySelector('meta[name="robots"]')) {
+          var m = d.createElement('meta');
+          m.name = 'robots';
+          m.content = 'noindex, nofollow, noarchive';
+          d.head.appendChild(m);
+        }
+      } catch (e) {}
+    </script>
+    """,
+    height=0,
+)
+
 # ── 전체 요약: 중요 프로젝트(빨강) 상태는 URL 쿼리파라미터에 보존 ──────────────
 # (링크 클릭=전체 페이지 이동→세션 리셋되므로 session_state 대신 URL에 저장)
 important = set(st.query_params.get_all("imp"))
